@@ -119,6 +119,30 @@ function Dashboard() {
     timestamp: new Date(Date.now() - i * 1800000).toISOString()
   }))
 
+  // Fetch live prices from backend API
+  const [livePrices, setLivePrices] = useState([])
+
+  useEffect(() => {
+    loadLivePrices()
+    const priceInterval = setInterval(loadLivePrices, 5000) // Update every 5s
+    return () => clearInterval(priceInterval)
+  }, [])
+
+  const loadLivePrices = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/api/prices/live`)
+      if (res.data.success && res.data.prices) {
+        setLivePrices(res.data.prices)
+      } else {
+        // If API returns error, keep current prices or show empty
+        console.warn('API returned no prices:', res.data)
+      }
+    } catch (error) {
+      console.error('Failed to load live prices:', error)
+      // Keep showing last known prices, don't clear them
+    }
+  }
+
   // Check if market is open
   const isMarketOpen = () => {
     const day = currentTime.getUTCDay()
@@ -133,35 +157,7 @@ function Dashboard() {
     return true
   }
 
-  // Get live prices with market status
-  const getLivePrices = () => {
-    const pairs = [
-      { symbol: 'EURUSD', name: 'Euro / US Dollar', base: 1.0850, isCrypto: false },
-      { symbol: 'GBPUSD', name: 'Pound / US Dollar', base: 1.2650, isCrypto: false },
-      { symbol: 'USDJPY', name: 'US Dollar / Yen', base: 149.85, isCrypto: false },
-      { symbol: 'XAUUSD', name: 'Gold / US Dollar', base: 2035.40, isCrypto: false },
-      { symbol: 'BTCUSD', name: 'Bitcoin / US Dollar', base: 43250.00, isCrypto: true },
-      { symbol: 'ETHUSD', name: 'Ethereum / US Dollar', base: 2280.50, isCrypto: true }
-    ]
-
-    return pairs.map(pair => {
-      const marketOpen = pair.isCrypto || isMarketOpen()
-      const change = marketOpen ? (Math.random() - 0.5) * 2 : 0
-      const buyPercent = marketOpen ? 40 + Math.random() * 40 : 50
-      const sellPercent = 100 - buyPercent
-
-      return {
-        ...pair,
-        price: marketOpen ? (pair.base * (1 + change / 100)).toFixed(pair.symbol.includes('JPY') ? 2 : 4) : pair.base.toFixed(pair.symbol.includes('JPY') ? 2 : 4),
-        change: marketOpen ? change : 0,
-        buyPercent: Math.round(buyPercent),
-        sellPercent: Math.round(sellPercent),
-        marketOpen
-      }
-    })
-  }
-
-  // Generate equity curve
+  // Generate equity curve from trades
   const equityCurve = trades.reduce((acc, trade, idx) => {
     const prev = acc[idx - 1] || { equity: 10000 }
     acc.push({
@@ -322,7 +318,7 @@ function Dashboard() {
       <div style={{ marginBottom: '32px' }}>
         <ChartCard title="💹 Live Market Prices & Order Flow">
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
-            {getLivePrices().map((pair) => (
+            {livePrices.map((pair) => (
               <PriceCard key={pair.symbol} pair={pair} />
             ))}
           </div>
@@ -425,6 +421,13 @@ function Dashboard() {
 
 // Component implementations...
 function PriceCard({ pair }) {
+  // Format price with proper decimals
+  const formatPrice = (price) => {
+    if (!price) return '-'
+    const decimals = pair.symbol?.includes('JPY') ? 2 : (pair.symbol?.includes('BTC') || pair.symbol?.includes('ETH')) ? 2 : 4
+    return typeof price === 'number' ? price.toFixed(decimals) : price
+  }
+
   return (
     <div style={{
       padding: '16px',
@@ -455,16 +458,16 @@ function PriceCard({ pair }) {
           <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>{pair.name}</div>
         </div>
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#fff' }}>{pair.price}</div>
+          <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#fff' }}>{formatPrice(pair.price)}</div>
           <div style={{
             fontSize: '12px',
-            color: pair.change >= 0 ? '#10b981' : '#ef4444',
+            color: (pair.change || 0) >= 0 ? '#10b981' : '#ef4444',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'flex-end',
             marginTop: '2px'
           }}>
-            {pair.change >= 0 ? '▲' : '▼'} {Math.abs(pair.change).toFixed(2)}%
+            {(pair.change || 0) >= 0 ? '▲' : '▼'} {Math.abs(pair.change || 0).toFixed(2)}%
           </div>
         </div>
       </div>

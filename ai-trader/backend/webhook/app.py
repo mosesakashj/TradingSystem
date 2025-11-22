@@ -688,6 +688,86 @@ async def get_system_status():
 
 
 # ============================================
+# Live Prices Endpoint
+# ============================================
+
+@app.get("/api/prices/live")
+async def get_live_prices():
+    """Get real-time prices for all supported pairs"""
+    from common.price_feed import price_feed
+    import random
+    
+    try:
+        # Fetch prices from APIs
+        prices_data = price_feed.get_all_prices()
+        
+        # Format for frontend with buy/sell percentages
+        formatted_prices = []
+        
+        for symbol, data in prices_data.items():
+            # Determine if crypto (24/7) or forex (24/5)
+            is_crypto = symbol in ['BTCUSD', 'ETHUSD']
+            
+            # Check market hours for forex
+            day = datetime.utcnow().weekday()  # 0=Monday, 6=Sunday
+            hour = datetime.utcnow().hour
+            
+            # Market is open if crypto OR (not weekend and not Friday night)
+            market_open = is_crypto or (day < 5 or (day == 6 and hour >= 22))
+            
+            # Simulate buy/sell percentages (in production, get from order book)
+            # If market closed, show neutral 50/50 or last known sentiment
+            if market_open:
+                buy_percent = random.randint(40, 80)
+                # Use actual change from API data when market is open
+                change = data.get('change_24h', 0)
+            else:
+                buy_percent = 50  # Neutral when closed
+                change = 0  # No change when market closed
+            
+            sell_percent = 100 - buy_percent
+            
+            formatted_prices.append({
+                'symbol': symbol,
+                'name': get_pair_name(symbol),
+                'price': data.get('price'),  # Always show price, even if closed
+                'change': change,  # 0 when closed, actual when open
+                'buyPercent': buy_percent,
+                'sellPercent': sell_percent,
+                'marketOpen': market_open,
+                'isCrypto': is_crypto,
+                'timestamp': data.get('timestamp'),
+                'source': data.get('source', 'api')
+            })
+        
+        return {
+            'success': True,
+            'prices': formatted_prices,
+            'timestamp': datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': str(e),
+            'prices': []
+        }
+
+
+def get_pair_name(symbol: str) -> str:
+    """Get human-readable pair name"""
+    names = {
+        'EURUSD': 'Euro / US Dollar',
+        'GBPUSD': 'Pound / US Dollar',
+        'USDJPY': 'US Dollar / Yen',
+        'XAUUSD': 'Gold / US Dollar',
+        'BTCUSD': 'Bitcoin / US Dollar',
+        'ETHUSD': 'Ethereum / US Dollar'
+    }
+    return names.get(symbol, symbol)
+
+
+# ============================================
 # WebSocket Endpoints
 # ============================================
 
