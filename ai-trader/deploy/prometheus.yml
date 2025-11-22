@@ -1,0 +1,59 @@
+# Global Prometheus Configuration
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'trading-system'
+    environment: 'production'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - 'alertmanager:9093'
+
+# Rule files
+rule_files:
+  - "/etc/prometheus/alerts.yml"
+
+# Scrape configurations
+scrape_configs:
+  # Webhook Service
+  - job_name: 'webhook_service'
+    static_configs:
+      - targets: ['webhook_service:8000']
+    metrics_path: '/metrics'
+
+  # AI Inference Service
+  - job_name: 'ai_service'
+    static_configs:
+      - targets: ['ai_service:8001']
+    metrics_path: '/metrics'
+
+  # Execution Service
+  - job_name: 'execution_service'
+    static_configs:
+      - targets: ['execution_service:8003']
+    metrics_path: '/metrics'
+
+  # Risk Service
+  - job_name: 'risk_service'
+    static_configs:
+      - targets: ['risk_service:8002']
+    metrics_path: '/metrics'
+
+  # PostgreSQL Exporter
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres_exporter:9187']
+
+  # Redis Exporter
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis_exporter:9121']
+
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
