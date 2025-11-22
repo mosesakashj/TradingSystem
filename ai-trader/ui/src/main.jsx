@@ -215,201 +215,206 @@ function Dashboard() {
   const apiOnline = systemStatus?.status === 'online'
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#0f172a', color: '#e2e8f0', padding: '24px' }}>
-      {/* Header with Clock and Status */}
-      <div style={{ marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'start', flexWrap: 'wrap', gap: '16px' }}>
-        <div>
-          <h1 style={{ fontSize: '32px', fontWeight: 'bold', color: '#fff', marginBottom: '8px' }}>
-            🚀 AI Trading Dashboard
+    <div style={{ minHeight: '100vh', backgroundColor: '#0b1120', color: '#e2e8f0', fontFamily: "'Inter', sans-serif" }}>
+      {/* Top Navigation Bar */}
+      <div style={{ 
+        backgroundColor: '#1e293b', 
+        borderBottom: '1px solid #334155',
+        padding: '0 24px',
+        height: '64px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        position: 'sticky',
+        top: 0,
+        zIndex: 50,
+        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ width: '32px', height: '32px', background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Activity size={20} color="#fff" />
+          </div>
+          <h1 style={{ fontSize: '20px', fontWeight: 'bold', color: '#fff', letterSpacing: '-0.5px' }}>
+            AI Trader <span style={{ color: '#64748b', fontWeight: 'normal' }}>Pro</span>
           </h1>
-          <p style={{ color: '#94a3b8' }}>Real-time monitoring and analytics</p>
         </div>
-        
-        <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-          {/* Live Clock */}
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+          {/* Market Status Pill */}
           <div style={{ 
-            padding: '12px 20px', 
-            backgroundColor: '#1e293b', 
-            borderRadius: '8px',
-            border: '1px solid #334155',
-            textAlign: 'right'
+            padding: '6px 12px', 
+            backgroundColor: isMarketOpen() ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', 
+            borderRadius: '20px',
+            border: `1px solid ${isMarketOpen() ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-              <Clock size={16} color="#64748b" />
-              <span style={{ fontSize: '12px', color: '#64748b' }}>{settings?.timezone || 'UTC'}</span>
-            </div>
-            <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#fff' }}>{formatTime()}</div>
-            <div style={{ fontSize: '12px', color: '#94a3b8' }}>{formatDate()}</div>
+            <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: isMarketOpen() ? '#10b981' : '#ef4444', boxShadow: isMarketOpen() ? '0 0 8px #10b981' : 'none' }} />
+            <span style={{ fontSize: '12px', fontWeight: '600', color: isMarketOpen() ? '#10b981' : '#ef4444' }}>
+              {isMarketOpen() ? 'MARKET OPEN' : 'MARKET CLOSED'}
+            </span>
           </div>
 
-          {/* API Status */}
-          <div style={{ 
-            padding: '12px 20px', 
-            backgroundColor: '#1e293b', 
-            borderRadius: '8px',
-            border: '1px solid #334155'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {apiOnline ? <Wifi size={20} color="#10b981" /> : <WifiOff size={20} color="#ef4444" />}
-              <div>
-                <div style={{ fontSize: '12px', color: '#64748b' }}>API Status</div>
-                <div style={{ 
-                  fontSize: '14px', 
-                  fontWeight: '600',
-                  color: apiOnline ? '#10b981' : '#ef4444'
-                }}>
-                  {apiOnline ? 'Online' : 'Offline'}
-                </div>
-              </div>
-            </div>
+          {/* Clock */}
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: '14px', fontWeight: '600', color: '#fff' }}>{formatTime()}</div>
+            <div style={{ fontSize: '11px', color: '#64748b' }}>{formatDate()} • {settings?.timezone || 'UTC'}</div>
           </div>
 
-          {/* Settings Button */}
+          {/* Settings */}
           <button
             onClick={() => setShowSettings(true)}
             style={{
-              padding: '12px 16px',
-              backgroundColor: '#1e293b',
-              border: '1px solid #334155',
+              padding: '8px',
+              backgroundColor: '#334155',
+              border: 'none',
               borderRadius: '8px',
-              color: '#e2e8f0',
+              color: '#cbd5e1',
               cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
+              transition: 'all 0.2s'
             }}
           >
             <Settings size={20} />
-            Settings
           </button>
         </div>
       </div>
 
-      {/* Top Metrics */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px', marginBottom: '32px' }}>
-        <MetricCard 
-          title="Total P&L" 
-          value={`$${stats.total_pnl.toFixed(2)}`}
-          trend={stats.total_pnl > 0 ? 'up' : 'down'}
-          icon={<DollarSign size={24} color="#10b981" />}
-          color="#10b981"
-        />
-        <MetricCard 
-          title="Win Rate" 
-          value={`${stats.win_rate.toFixed(1)}%`}
-          subtitle={`${stats.winning_trades}/${stats.closed_trades}`}
-          icon={<TrendingUp size={24} color="#3b82f6" />}
-          color="#3b82f6"
-        />
-        <MetricCard 
-          title="Open Trades" 
-          value={stats.open_trades}
-          subtitle={`${stats.total_trades} total`}
-          icon={<Activity size={24} color="#f59e0b" />}
-          color="#f59e0b"
-        />
-        <MetricCard 
-          title="Total Signals" 
-          value={stats.total_signals}
-          subtitle="Received"
-          icon={<CheckCircle size={24} color="#8b5cf6" />}
-          color="#8b5cf6"
-        />
-      </div>
-
-      {/* Live Price Ticker */}
-      <div style={{ marginBottom: '32px' }}>
-        <ChartCard title="💹 Live Market Prices & Order Flow">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+      {/* Main Content Area */}
+      <div style={{ padding: '24px', maxWidth: '1600px', margin: '0 auto' }}>
+        
+        {/* Live Ticker Strip */}
+        <div style={{ marginBottom: '24px', overflow: 'hidden' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
             {livePrices.map((pair) => (
               <PriceCard key={pair.symbol} pair={pair} />
             ))}
           </div>
-        </ChartCard>
-      </div>
+        </div>
 
-      {/* Trading Sessions Chart */}
-      <div style={{ marginBottom: '32px' }}>
-        <TradingSessionsChart userTimezone={settings?.timezone} />
-      </div>
+        {/* Dashboard Grid */}
+        <div style={{ 
+          display: 'grid', 
+          gridTemplateColumns: 'minmax(0, 2.5fr) minmax(0, 1fr)', 
+          gap: '24px',
+          alignItems: 'start'
+        }}>
+          
+          {/* LEFT COLUMN (Main) */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            
+            {/* Active Signals (Hero Section) */}
+            <ActiveSignalsWidget />
 
-      {/* Charts Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))', gap: '20px', marginBottom: '32px' }}>
-        {/* Equity Curve with Entry/Target Points */}
-        <ChartCard title="📈 Equity Curve & Signals">
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={equityCurve}>
-              <defs>
-                <linearGradient id="colorEquity" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis dataKey="index" stroke="#64748b" />
-              <YAxis stroke="#64748b" />
-              <Tooltip 
-                contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }}
-                labelStyle={{ color: '#e2e8f0' }}
+            {/* Charts Section */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '24px' }}>
+              <ChartCard title="📈 Account Performance">
+                <div style={{ height: '350px', width: '100%' }}>
+                  <ResponsiveContainer>
+                    <AreaChart data={equityCurve}>
+                      <defs>
+                        <linearGradient id="colorEquity" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                      <XAxis dataKey="index" stroke="#64748b" tickLine={false} axisLine={false} />
+                      <YAxis stroke="#64748b" tickLine={false} axisLine={false} domain={['auto', 'auto']} />
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.5)' }}
+                        itemStyle={{ color: '#fff' }}
+                      />
+                      <Area type="monotone" dataKey="equity" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#colorEquity)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </ChartCard>
+            </div>
+
+            {/* Recent Trades */}
+            <TableCard title="💼 Trade History">
+              <TradesTable trades={trades.slice(0, 10)} />
+            </TableCard>
+          </div>
+
+          {/* RIGHT COLUMN (Sidebar) */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            
+            {/* Market Context */}
+            <TradingSessionsChart userTimezone={settings?.timezone} />
+
+            {/* Key Metrics Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <MetricCard 
+                title="Total P&L" 
+                value={`$${stats.total_pnl.toFixed(0)}`}
+                trend={stats.total_pnl > 0 ? 'up' : 'down'}
+                color="#10b981"
+                compact
               />
-              <Area type="monotone" dataKey="equity" stroke="#10b981" fillOpacity={1} fill="url(#colorEquity)" />
-              {/* Entry/Target example markers */}
-              {signals.slice(0, 3).map((signal, i) => (
-                <React.Fragment key={i}>
-                  <ReferenceLine y={signal.entry_price * 10000} stroke="#3b82f6" strokeDasharray="3 3" label={{ value: 'Entry', fill: '#3b82f6', fontSize: 10 }} />
-                  {signal.take_profit && (
-                    <ReferenceLine y={signal.take_profit * 10000} stroke="#10b981" strokeDasharray="3 3" label={{ value: 'Target', fill: '#10b981', fontSize: 10 }} />
-                  )}
-                </React.Fragment>
-              ))}
-            </AreaChart>
-          </ResponsiveContainer>
-        </ChartCard>
+              <MetricCard 
+                title="Win Rate" 
+                value={`${stats.win_rate.toFixed(1)}%`}
+                color="#3b82f6"
+                compact
+              />
+              <MetricCard 
+                title="Open Trades" 
+                value={stats.open_trades}
+                color="#f59e0b"
+                compact
+              />
+              <MetricCard 
+                title="Signals" 
+                value={stats.total_signals}
+                color="#8b5cf6"
+                compact
+              />
+            </div>
 
-        {/* Win/Loss Distribution */}
-        <ChartCard title="🎯 Win/Loss Distribution">
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={winLossData}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                outerRadius={100}
-                fill="#8884d8"
-                dataKey="value"
-              >
-                {winLossData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
-                ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
-        </ChartCard>
-      </div>
+            {/* Win/Loss Distribution */}
+            <ChartCard title="🎯 Performance Split">
+              <div style={{ height: '200px', width: '100%' }}>
+                <ResponsiveContainer>
+                  <PieChart>
+                    <Pie
+                      data={winLossData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={80}
+                      paddingAngle={5}
+                      dataKey="value"
+                    >
+                      {winLossData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />
+                      ))}
+                    </Pie>
+                    <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '8px' }} />
+                    <Legend verticalAlign="bottom" height={36} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </ChartCard>
 
-      {/* Active Signals Widget */}
-      <div style={{ marginBottom: '32px' }}>
-        <ActiveSignalsWidget />
-      </div>
+            {/* System Status */}
+            <div style={{ padding: '20px', backgroundColor: '#1e293b', borderRadius: '12px', border: '1px solid #334155' }}>
+              <h3 style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '12px', fontWeight: '600' }}>SYSTEM HEALTH</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontSize: '13px', color: '#cbd5e1' }}>API Connection</span>
+                <span style={{ fontSize: '12px', color: apiOnline ? '#10b981' : '#ef4444', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  {apiOnline ? <Wifi size={14} /> : <WifiOff size={14} />} {apiOnline ? 'Stable' : 'Disconnected'}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '13px', color: '#cbd5e1' }}>Latency</span>
+                <span style={{ fontSize: '12px', color: '#10b981' }}>24ms</span>
+              </div>
+            </div>
 
-      {/* Recent Trades & Signals */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))', gap: '20px' }}>
-        <TableCard title="💼 Recent Trades">
-          <TradesTable trades={trades.slice(0, 10)} />
-        </TableCard>
-      </div>
-
-      {/* Footer */}
-      <div style={{ marginTop: '40px', padding: '20px', backgroundColor: '#1e293b', borderRadius: '12px', textAlign: 'center' }}>
-        <p style={{ color: '#94a3b8', marginBottom: '12px' }}>
-          <strong>API Documentation:</strong> <a href="http://localhost:8000/docs" target="_blank" style={{ color: '#3b82f6' }}>http://localhost:8000/docs</a>
-        </p>
-        <p style={{ fontSize: '14px', color: '#64748b' }}>
-          Dashboard auto-refreshes every 5 seconds • Market: {isMarketOpen() ? '🟢 Open' : '🔴 Closed'}
-        </p>
+          </div>
+        </div>
       </div>
 
       {/* Settings Modal */}
@@ -713,28 +718,34 @@ function SettingsModal({ settings, onClose, onSave }) {
 }
 
 // Reusable Components
-function MetricCard({ title, value, subtitle, trend, icon, color }) {
+function MetricCard({ title, value, subtitle, trend, icon, color, compact }) {
   return (
     <div style={{
-      padding: '24px',
+      padding: compact ? '16px' : '24px',
       backgroundColor: '#1e293b',
       borderRadius: '12px',
-      border: '1px solid #334155'
+      border: '1px solid #334155',
+      height: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'space-between'
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '16px' }}>
-        <span style={{ color: '#94a3b8', fontSize: '14px' }}>{title}</span>
-        {icon}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: compact ? '8px' : '16px' }}>
+        <span style={{ color: '#94a3b8', fontSize: compact ? '12px' : '14px', fontWeight: '500' }}>{title}</span>
+        {!compact && icon}
       </div>
-      <div style={{ fontSize: '28px', fontWeight: 'bold', color: color || '#fff', marginBottom: '4px' }}>
-        {value}
-      </div>
-      {subtitle && <div style={{ fontSize: '14px', color: '#64748b' }}>{subtitle}</div>}
-      {trend && (
-        <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', fontSize: '14px', color: trend === 'up' ? '#10b981' : '#ef4444' }}>
-          {trend === 'up' ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
-          <span style={{ marginLeft: '4px' }}>{trend === 'up' ? 'Profit' : 'Loss'}</span>
+      <div>
+        <div style={{ fontSize: compact ? '20px' : '28px', fontWeight: 'bold', color: color || '#fff', marginBottom: '4px' }}>
+          {value}
         </div>
-      )}
+        {subtitle && <div style={{ fontSize: '12px', color: '#64748b' }}>{subtitle}</div>}
+        {trend && (
+          <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', fontSize: '12px', color: trend === 'up' ? '#10b981' : '#ef4444' }}>
+            {trend === 'up' ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+            <span style={{ marginLeft: '4px' }}>{trend === 'up' ? 'Profit' : 'Loss'}</span>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
