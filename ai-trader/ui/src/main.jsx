@@ -481,11 +481,79 @@ function TradingSessionsChart({ userTimezone = 'UTC' }) {
   // Generate 24 hours
   const hours = Array.from({ length: 24 }, (_, i) => i)
 
+  // Determine which sessions are currently active
+  const getActiveSessions = () => {
+    const active = []
+    sessions.forEach(session => {
+      if (currentHour >= session.start && currentHour < session.end) {
+        active.push(session)
+      }
+    })
+    return active
+  }
+
+  const activeSessions = getActiveSessions()
+
   return (
     <div style={{ padding: '24px', backgroundColor: '#1e293b', borderRadius: '12px', border: '1px solid #334155' }}>
-      <h3 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '20px', color: '#fff' }}>
-        🌍 Trading Sessions & Overlap (UTC)
-      </h3>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '20px', flexWrap: 'wrap', gap: '16px' }}>
+        <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#fff', margin: 0 }}>
+          🌍 Trading Sessions & Overlap (UTC)
+        </h3>
+        
+        {/* Active Session Indicator */}
+        <div style={{
+          padding: '12px 20px',
+          backgroundColor: activeSessions.length > 0 ? '#0f172a' : '#1e293b',
+          borderRadius: '8px',
+          border: activeSessions.length > 0 ? `2px solid ${activeSessions[0]?.color}` : '1px solid #334155',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px'
+        }}>
+          {activeSessions.length > 0 ? (
+            <>
+              <div style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                backgroundColor: activeSessions[0].color,
+                animation: 'pulse 2s infinite',
+                boxShadow: `0 0 10px ${activeSessions[0].color}`
+              }} />
+              <div>
+                <div style={{ fontSize: '11px', color: '#64748b' }}>ACTIVE NOW</div>
+                <div style={{ fontSize: '14px', fontWeight: '600', color: activeSessions[0].color }}>
+                  {activeSessions.map(s => s.name).join(' + ')}
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                backgroundColor: '#64748b'
+              }} />
+              <div>
+                <div style={{ fontSize: '11px', color: '#64748b' }}>MARKET STATUS</div>
+                <div style={{ fontSize: '14px', fontWeight: '600', color: '#94a3b8' }}>
+                  Between Sessions
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Add pulse animation */}
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+      `}</style>
 
       {/* Legend */}
       <div style={{ display: 'flex', gap: '16px', marginBottom: '20px', flexWrap: 'wrap' }}>
