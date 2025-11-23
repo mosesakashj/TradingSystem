@@ -8,6 +8,10 @@ from sqlalchemy.orm import Session
 import json
 import os
 
+# Load environment variables
+from dotenv import load_dotenv
+load_dotenv()
+
 # Internal imports
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -89,14 +93,108 @@ app.add_middleware(
 
 
 # ============================================
-# Startup/Shutdown Events
+# Background Tasks & Helpers
 # ============================================
+
+def format_prices_data(prices_data: dict) -> list:
+    """Format raw price data for frontend"""
+    import random
+    formatted_prices = []
+    
+    for symbol, data in prices_data.items():
+        # Determine if crypto (24/7) or forex (24/5)
+        is_crypto = symbol in ['BTCUSD', 'ETHUSD']
+        
+        # Check market hours for forex
+        day = datetime.utcnow().weekday()  # 0=Monday, 6=Sunday
+        hour = datetime.utcnow().hour
+        
+        # Market is open if crypto OR (not weekend and not Friday night)
+        market_open = is_crypto or (day < 5 or (day == 6 and hour >= 22))
+        
+        # Simulate buy/sell percentages (in production, get from order book)
+        if market_open:
+            buy_percent = random.randint(40, 80)
+            change = data.get('change_24h', 0)
+        else:
+            buy_percent = 50
+            change = 0
+        
+        sell_percent = 100 - buy_percent
+        
+        formatted_prices.append({
+            'symbol': symbol,
+            'name': get_pair_name(symbol),
+            'price': data.get('price'),
+            'change': change,
+            'buyPercent': buy_percent,
+            'sellPercent': sell_percent,
+            'marketOpen': market_open,
+            'isCrypto': is_crypto,
+            'timestamp': data.get('timestamp'),
+            'source': data.get('source', 'api')
+        })
+    return formatted_prices
+
+
+async def broadcast_prices_task():
+    """Background task to broadcast prices via WebSocket"""
+    from common import Room
+    from common.price_feed import price_feed
+    import asyncio
+    
+    print("📡 Starting Price Broadcast Task...")
+    while True:
+        try:
+            # Fetch prices (non-blocking)
+            prices_data = await asyncio.to_thread(price_feed.get_all_prices)
+            
+            # Format prices
+            formatted_prices = format_prices_data(prices_data)
+            
+            # Broadcast
+            await ws_manager.broadcast_to_room(Room.PRICES, {
+                "type": "prices",
+                "data": formatted_prices
+            })
+            
+            # Update every 2s (respecting API limits)
+            await asyncio.sleep(2) 
+            
+        except asyncio.CancelledError:
+            print("📡 Price Broadcast Task Cancelled")
+            break
+        except Exception as e:
+            print(f"❌ Error in price broadcast: {e}")
+            await asyncio.sleep(5)
+
+
+# Global task reference
+price_task = None
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize services on startup"""
     print("🚀 Starting Webhook Service...")
     
+    # Check and run migrations (Add new columns if missing)
+    try:
+        from database import engine
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            # Check if targets column exists
+            result = conn.execute(text("SELECT column_name FROM information_schema.columns WHERE table_name='signals' AND column_name='targets'"))
+            if not result.fetchone():
+                print("🔄 Running migration: Adding institutional columns to signals table...")
+                conn.execute(text("ALTER TABLE signals ADD COLUMN targets JSON"))
+                conn.execute(text("ALTER TABLE signals ADD COLUMN confidence JSON"))
+                conn.execute(text("ALTER TABLE signals ADD COLUMN volatility VARCHAR(20)"))
+                conn.execute(text("ALTER TABLE signals ADD COLUMN win_probability FLOAT"))
+                conn.commit()
+                print("✅ Migration complete")
+    except Exception as e:
+        print(f"⚠️ Migration check failed (might be SQLite or already exists): {e}")
+
     # Initialize database
     try:
         init_db()
@@ -108,6 +206,11 @@ async def startup_event():
     redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
     await ws_manager.connect_redis(redis_url)
     
+    # Start Price Broadcast Task
+    global price_task
+    import asyncio
+    price_task = asyncio.create_task(broadcast_prices_task())
+    
     print("✅ Webhook Service started successfully")
 
 
@@ -115,6 +218,15 @@ async def startup_event():
 async def shutdown_event():
     """Cleanup on shutdown"""
     print("🛑 Shutting down Webhook Service...")
+    
+    # Cancel background task
+    if price_task:
+        price_task.cancel()
+        try:
+            await price_task
+        except asyncio.CancelledError:
+            pass
+            
     await ws_manager.close_all()
     print("✅ Webhook Service stopped")
 
@@ -147,9 +259,157 @@ async def root():
             "webhook": "/webhook/signal",
             "trades": "/trades",
             "signals": "/signals",
-            "health": "/health"
+            "health": "/health",
+            "auth": {
+                "login": "/auth/login",
+                "register": "/auth/register",
+                "me": "/auth/me"
+            }
         }
     }
+
+
+# ============================================
+# Authentication Schemas
+# ============================================
+
+class UserRegister(BaseModel):
+    """User registration schema"""
+    username: str = Field(..., min_length=3, max_length=50)
+    email: str = Field(..., min_length=5, max_length=100)
+    password: str = Field(..., min_length=8)
+    full_name: Optional[str] = None
+
+
+class UserLogin(BaseModel):
+    """User login schema"""
+    username: str
+    password: str
+
+
+class Token(BaseModel):
+    """JWT token response"""
+    access_token: str
+    token_type: str = "bearer"
+    user: dict
+
+
+class UserResponse(BaseModel):
+    """User response schema"""
+    id: int
+    username: str
+    email: str
+    full_name: Optional[str]
+    role: str
+    is_active: bool
+    created_at: datetime
+    last_login: Optional[datetime]
+
+
+# ============================================
+# Authentication Endpoints
+# ============================================
+
+@app.post("/auth/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+async def register_user(
+    user_data: UserRegister,
+    db: Session = Depends(get_db_session)
+):
+    """
+    Register a new user
+    """
+    from database.user_management import create_user
+    from database.models import UserRole
+    
+    try:
+        user = create_user(
+            db=db,
+            username=user_data.username,
+            email=user_data.email,
+            password=user_data.password,
+            full_name=user_data.full_name,
+            role=UserRole.TRADER
+        )
+        
+        return UserResponse(
+            id=user.id,
+            username=user.username,
+            email=user.email,
+            full_name=user.full_name,
+            role=user.role.value,
+            is_active=user.is_active,
+            created_at=user.created_at,
+            last_login=user.last_login
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
+@app.post("/auth/login", response_model=Token)
+async def login(
+    credentials: UserLogin,
+    db: Session = Depends(get_db_session)
+):
+    """
+    Login and receive JWT token
+    """
+    from database.user_management import authenticate_user, create_access_token
+    
+    user = authenticate_user(db, credentials.username, credentials.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Create access token
+    access_token = create_access_token(data={"sub": user.id, "username": user.username})
+    
+    return Token(
+        access_token=access_token,
+        user={
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "full_name": user.full_name,
+            "role": user.role.value
+        }
+    )
+
+
+@app.get("/auth/me", response_model=UserResponse)
+async def get_current_user_endpoint(
+    token_data: dict = Depends(verify_jwt_token),
+    db: Session = Depends(get_db_session)
+):
+    """
+    Get current user from JWT token
+    """
+    from database.models import User
+    
+    user_id = token_data.get("sub")
+    user = db.query(User).filter(User.id == user_id).first()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    return UserResponse(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        full_name=user.full_name,
+        role=user.role.value,
+        is_active=user.is_active,
+        created_at=user.created_at,
+        last_login=user.last_login
+    )
 
 
 # ============================================
@@ -164,12 +424,6 @@ async def receive_signal(
 ):
     """
     Receive signal from TradingView webhook
-    
-    This endpoint:
-    1. Validates HMAC signature
-    2. Logs raw signal to database
-    3. Triggers AI inference (background)
-    4. Returns immediately to TradingView
     """
     # Rate limiting
     client_ip = request.client.host
@@ -213,18 +467,53 @@ async def receive_signal(
             detail=f"Invalid payload: {str(e)}"
         )
     
+    # Generate Institutional Data (Simulating AI Analysis)
+    from common.ai_client import ai_client
+    
+    # Get fast prediction for initial display
+    ai_pred = await ai_client.get_prediction({
+        'symbol': payload.symbol,
+        'direction': payload.direction,
+        'timeframe': payload.timeframe
+    })
+    
+    # Calculate targets based on Risk (Entry - SL)
+    risk = abs(payload.entry_price - payload.stop_loss) if payload.entry_price and payload.stop_loss else 0.0010
+    targets = []
+    if payload.direction.lower() == 'buy':
+        targets = [
+            payload.entry_price + risk * 1.5,
+            payload.entry_price + risk * 2.5,
+            payload.entry_price + risk * 4.0
+        ]
+    else:
+        targets = [
+            payload.entry_price - risk * 1.5,
+            payload.entry_price - risk * 2.5,
+            payload.entry_price - risk * 4.0
+        ]
+    
+    # Round targets
+    targets = [round(t, 4) if 'JPY' not in payload.symbol else round(t, 2) for t in targets]
+    
     # Create signal record
     signal = Signal(
         symbol=payload.symbol,
         direction=payload.direction,
-        timeframe=payload.timeframe,
-        strategy_name=payload.strategy_name,
+        timeframe=payload.timeframe or "H1",
+        strategy_name=payload.strategy_name or "AI Trend Follower",
         entry_price=payload.entry_price,
         stop_loss=payload.stop_loss,
         take_profit=payload.take_profit,
         raw_payload=payload_dict,
         source_ip=client_ip,
-        status=SignalStatus.RECEIVED
+        status=SignalStatus.RECEIVED,
+        
+        # Institutional Data
+        targets=targets,
+        confidence=["AI Analyzing..."], # Placeholder until pipeline finishes
+        volatility='Medium', # Placeholder
+        win_probability=round(ai_pred['confidence'] * 100, 1)
     )
     
     db.add(signal)
@@ -250,7 +539,9 @@ async def receive_signal(
         "symbol": signal.symbol,
         "direction": signal.direction,
         "timestamp": signal.timestamp.isoformat(),
-        "status": signal.status.value
+        "status": signal.status.value,
+        "win_probability": signal.win_probability,
+        "volatility": signal.volatility
     })
     
     # Trigger processing pipeline in background
@@ -273,7 +564,7 @@ async def process_signal_pipeline(signal_id: int):
     4. Execution Service (MT5 order placement)
     """
     from database import get_db, Prediction, Trade, TradeStatus, TradeDirection
-    from model.llm_validator import llm_validator
+    from common.ai_client import ai_client
     
     print(f"📊 Processing signal {signal_id} through pipeline...")
     
@@ -287,19 +578,20 @@ async def process_signal_pipeline(signal_id: int):
         try:
             # === STEP 1: AI Inference ===
             print(f"🤖 Step 1: Running AI inference...")
-            # Placeholder - would call AI service
-            ai_prediction = {
-                'model_name': 'lstm_v1',
-                'model_version': '1.0',
-                'prediction': 0.75,
-                'confidence': 0.82,
-                'expected_return': 1.5,
-                'features': {}
-            }
             
-            # === STEP 2: LLM Validation (NEW) ===
+            # Get prediction from AI Client
+            signal_data_for_ai = {
+                'symbol': signal.symbol,
+                'direction': signal.direction.value,
+                'entry_price': signal.entry_price,
+                'timeframe': signal.timeframe
+            }
+            ai_prediction = await ai_client.get_prediction(signal_data_for_ai)
+            
+            # === STEP 2: LLM Validation ===
             print(f"🧠 Step 2: Running LLM validation...")
-            llm_approved, llm_reasoning, llm_confidence = llm_validator.validate_signal(
+            
+            validation_result = await ai_client.validate_signal(
                 signal_data={
                     'symbol': signal.symbol,
                     'direction': signal.direction.value,
@@ -309,16 +601,27 @@ async def process_signal_pipeline(signal_id: int):
                     'timeframe': signal.timeframe,
                     'strategy_name': signal.strategy_name
                 },
-                ai_prediction=ai_prediction,
-                risk_assessment={'approved': True, 'risk_level': 'medium'},  # Preliminary
-                market_context=None
+                prediction=ai_prediction,
+                risk_assessment={'approved': True, 'risk_level': 'medium'}
             )
             
-            # Store prediction with LLM reasoning
+            llm_approved = validation_result['approved']
+            llm_reasoning = validation_result['reasoning']
+            llm_confidence = validation_result['confidence']
+            
+            # Update Signal with AI insights
+            signal.win_probability = round(ai_prediction['confidence'] * 100, 1)
+            
+            # Extract key phrases from reasoning for "confidence factors"
+            # Simple heuristic: split by newlines or commas and take top 3
+            factors = [f.strip() for f in llm_reasoning.split('\n') if f.strip() and not f.startswith('LLM') and len(f) < 50]
+            signal.confidence = factors[:3] if factors else ["AI Approved"]
+            
+            # Store prediction record
             prediction = Prediction(
                 signal_id=signal_id,
                 model_name=ai_prediction['model_name'],
-                model_version=ai_prediction['model_version'],
+                model_version='1.0',
                 prediction=ai_prediction['prediction'],
                 confidence=ai_prediction['confidence'],
                 expected_return=ai_prediction['expected_return'],
@@ -337,9 +640,20 @@ async def process_signal_pipeline(signal_id: int):
             # If LLM rejects, stop here
             if not llm_approved:
                 signal.status = SignalStatus.REJECTED
-                signal.rejection_reason = f"LLM rejected: {llm_reasoning}"
+                signal.rejection_reason = f"LLM rejected: {llm_reasoning[:50]}..."
                 db.commit()
-                print(f"🛑 Signal {signal_id} rejected by LLM")
+                
+                # Broadcast update
+                await ws_manager.broadcast_signal({
+                    "signal_id": signal.id,
+                    "symbol": signal.symbol,
+                    "direction": signal.direction,
+                    "timestamp": signal.timestamp.isoformat(),
+                    "status": signal.status.value,
+                    "win_probability": signal.win_probability,
+                    "volatility": signal.volatility,
+                    "confidence": signal.confidence
+                })
                 return
             
             # === STEP 3: Risk Management ===
@@ -373,7 +687,18 @@ async def process_signal_pipeline(signal_id: int):
             
             print(f"✅ Signal {signal_id} processed successfully")
             print(f"   Trade ID: {trade.id}")
-            print(f"   LLM Reasoning: {llm_reasoning[:150]}...")
+            
+            # Broadcast update
+            await ws_manager.broadcast_signal({
+                "signal_id": signal.id,
+                "symbol": signal.symbol,
+                "direction": signal.direction,
+                "timestamp": signal.timestamp.isoformat(),
+                "status": signal.status.value,
+                "win_probability": signal.win_probability,
+                "volatility": signal.volatility,
+                "confidence": signal.confidence
+            })
             
         except Exception as e:
             print(f"❌ Error processing signal {signal_id}: {e}")
@@ -416,7 +741,15 @@ async def get_signals(
                 "status": s.status.value,
                 "entry_price": s.entry_price,
                 "stop_loss": s.stop_loss,
-                "take_profit": s.take_profit
+                "take_profit": s.take_profit,
+                
+                # Institutional Data
+                "strategy": s.strategy_name,
+                "timeframe": s.timeframe,
+                "targets": s.targets or [s.take_profit],
+                "confidence": s.confidence or [],
+                "volatility": s.volatility or "Medium",
+                "winProbability": s.win_probability or 75
             }
             for s in signals
         ]
@@ -695,50 +1028,14 @@ async def get_system_status():
 async def get_live_prices():
     """Get real-time prices for all supported pairs"""
     from common.price_feed import price_feed
-    import random
+    import asyncio
     
     try:
-        # Fetch prices from APIs
-        prices_data = price_feed.get_all_prices()
+        # Fetch prices (non-blocking)
+        prices_data = await asyncio.to_thread(price_feed.get_all_prices)
         
-        # Format for frontend with buy/sell percentages
-        formatted_prices = []
-        
-        for symbol, data in prices_data.items():
-            # Determine if crypto (24/7) or forex (24/5)
-            is_crypto = symbol in ['BTCUSD', 'ETHUSD']
-            
-            # Check market hours for forex
-            day = datetime.utcnow().weekday()  # 0=Monday, 6=Sunday
-            hour = datetime.utcnow().hour
-            
-            # Market is open if crypto OR (not weekend and not Friday night)
-            market_open = is_crypto or (day < 5 or (day == 6 and hour >= 22))
-            
-            # Simulate buy/sell percentages (in production, get from order book)
-            # If market closed, show neutral 50/50 or last known sentiment
-            if market_open:
-                buy_percent = random.randint(40, 80)
-                # Use actual change from API data when market is open
-                change = data.get('change_24h', 0)
-            else:
-                buy_percent = 50  # Neutral when closed
-                change = 0  # No change when market closed
-            
-            sell_percent = 100 - buy_percent
-            
-            formatted_prices.append({
-                'symbol': symbol,
-                'name': get_pair_name(symbol),
-                'price': data.get('price'),  # Always show price, even if closed
-                'change': change,  # 0 when closed, actual when open
-                'buyPercent': buy_percent,
-                'sellPercent': sell_percent,
-                'marketOpen': market_open,
-                'isCrypto': is_crypto,
-                'timestamp': data.get('timestamp'),
-                'source': data.get('source', 'api')
-            })
+        # Format using helper
+        formatted_prices = format_prices_data(prices_data)
         
         return {
             'success': True,

@@ -1,93 +1,67 @@
 import React from 'react'
 import { TrendingUp, TrendingDown, Target, Shield, BarChart2, Activity, Zap } from 'lucide-react'
 
-export function ActiveSignalsWidget() {
-  // Institutional-grade mock signals
-  const activeSignals = [
-    {
-      id: 1,
-      pair: 'EURUSD',
-      status: 'ongoing',
-      direction: 'buy',
-      strategy: 'Smart Money Concept',
-      timeframe: 'H4',
-      entryPrice: 1.0465,
-      currentPrice: 1.0482,
-      stopLoss: 1.0435,
-      targets: [1.0500, 1.0525, 1.0580], // TP1, TP2, TP3
-      winProbability: 78,
-      confidence: ['Liquidity Sweep', 'Bullish Order Block', 'RSI Divergence'],
-      volatility: 'Medium',
-      timestamp: '2h ago'
-    },
-    {
-      id: 2,
-      pair: 'GBPUSD',
-      status: 'waiting',
-      direction: 'sell',
-      strategy: 'Trend Continuation',
-      timeframe: 'H1',
-      entryPrice: 1.2590,
-      currentPrice: 1.2580,
-      stopLoss: 1.2620,
-      targets: [1.2550, 1.2530, 1.2480],
-      winProbability: 72,
-      confidence: ['EMA Crossover', 'Bearish Flag'],
-      volatility: 'High',
-      timestamp: '15m ago'
-    },
-    {
-      id: 3,
-      pair: 'XAUUSD',
-      status: 'succeeded',
-      direction: 'buy',
-      strategy: 'Safe Haven Flow',
-      timeframe: 'D1',
-      entryPrice: 4050.00,
-      currentPrice: 4065.00,
-      stopLoss: 4020.00,
-      targets: [4060.00, 4080.00, 4100.00],
-      winProbability: 85,
-      confidence: ['Global Uncertainty', 'Support Bounce'],
-      volatility: 'High',
-      timestamp: '4h ago'
-    },
-    {
-      id: 4,
-      pair: 'BTCUSD',
-      status: 'ongoing',
-      direction: 'buy',
-      strategy: 'Volume Breakout',
-      timeframe: 'M15',
-      entryPrice: 84200.00,
-      currentPrice: 84599.00,
-      stopLoss: 83800.00,
-      targets: [84800.00, 85500.00, 86000.00],
-      winProbability: 65,
-      confidence: ['Volume Spike', 'Triangle Break'],
-      volatility: 'Extreme',
-      timestamp: '1h ago'
-    }
-  ]
+export function ActiveSignalsWidget({ signals = [], livePrices = [] }) {
+  
+  // Helper to get current price for a symbol
+  const getCurrentPrice = (symbol) => {
+    const priceData = livePrices.find(p => p.symbol === symbol)
+    return priceData ? priceData.price : null
+  }
+
+  // Helper for time ago
+  const timeAgo = (dateString) => {
+    const date = new Date(dateString)
+    const now = new Date()
+    const seconds = Math.floor((now - date) / 1000)
+    
+    let interval = seconds / 31536000
+    if (interval > 1) return Math.floor(interval) + "y ago"
+    interval = seconds / 2592000
+    if (interval > 1) return Math.floor(interval) + "mo ago"
+    interval = seconds / 86400
+    if (interval > 1) return Math.floor(interval) + "d ago"
+    interval = seconds / 3600
+    if (interval > 1) return Math.floor(interval) + "h ago"
+    interval = seconds / 60
+    if (interval > 1) return Math.floor(interval) + "m ago"
+    return Math.floor(seconds) + "s ago"
+  }
 
   const getStatusColor = (status) => {
     switch(status) {
       case 'waiting': return { bg: 'rgba(59, 130, 246, 0.1)', text: '#60a5fa', border: '#3b82f6' }
-      case 'ongoing': return { bg: 'rgba(16, 185, 129, 0.1)', text: '#34d399', border: '#10b981' }
-      case 'succeeded': return { bg: 'rgba(245, 158, 11, 0.1)', text: '#fbbf24', border: '#f59e0b' }
+      case 'ongoing': 
+      case 'received': return { bg: 'rgba(16, 185, 129, 0.1)', text: '#34d399', border: '#10b981' }
+      case 'succeeded': 
+      case 'executed': return { bg: 'rgba(245, 158, 11, 0.1)', text: '#fbbf24', border: '#f59e0b' }
       default: return { bg: '#374151', text: '#9ca3af', border: '#6b7280' }
     }
   }
 
   const calculateRR = (signal) => {
-    const risk = Math.abs(signal.entryPrice - signal.stopLoss)
-    const reward = Math.abs(signal.targets[signal.targets.length - 1] - signal.entryPrice)
+    if (!signal.entry_price || !signal.stop_loss || !signal.targets) return '0.00'
+    const risk = Math.abs(signal.entry_price - signal.stop_loss)
+    const reward = Math.abs(signal.targets[signal.targets.length - 1] - signal.entry_price)
     return (reward / risk).toFixed(2)
   }
 
   const formatPrice = (price, pair) => {
-    const decimals = pair.includes('JPY') || pair.includes('XAU') || pair.includes('BTC') ? 2 : 4 // Simplified logic
+    if (!price) return '---'
+    const decimals = pair.includes('JPY') || pair.includes('XAU') || pair.includes('BTC') ? 2 : 4 
     return price.toFixed(decimals)
+  }
+
+  // Filter only active signals (received, ongoing, executed)
+  const activeSignals = signals.filter(s => ['received', 'ongoing', 'executed'].includes(s.status))
+
+  if (activeSignals.length === 0) {
+    return (
+      <div style={{ padding: '24px', backgroundColor: '#1e293b', borderRadius: '12px', border: '1px solid #334155', textAlign: 'center', color: '#94a3b8' }}>
+        <Zap size={32} style={{ marginBottom: '12px', opacity: 0.5 }} />
+        <div>No active signals at the moment. AI is scanning the markets...</div>
+      </div>
+    )
   }
 
   return (
@@ -109,10 +83,13 @@ export function ActiveSignalsWidget() {
         {activeSignals.map(signal => {
           const statusColors = getStatusColor(signal.status)
           const rr = calculateRR(signal)
+          const currentPrice = getCurrentPrice(signal.symbol) || signal.entry_price // Fallback to entry if no live price
+          
           const pnl = signal.direction === 'buy' 
-            ? signal.currentPrice - signal.entryPrice 
-            : signal.entryPrice - signal.currentPrice
-          const pnlPercent = (pnl / signal.entryPrice) * 100
+            ? currentPrice - signal.entry_price 
+            : signal.entry_price - currentPrice
+          
+          const pnlPercent = (pnl / signal.entry_price) * 100
           const isProfit = pnl >= 0
 
           return (
@@ -131,7 +108,7 @@ export function ActiveSignalsWidget() {
               <div style={{ padding: '16px', borderBottom: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#fff' }}>{signal.pair}</span>
+                    <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#fff' }}>{signal.symbol}</span>
                     <span style={{ fontSize: '11px', padding: '2px 6px', borderRadius: '4px', backgroundColor: '#334155', color: '#cbd5e1' }}>
                       {signal.timeframe}
                     </span>
@@ -153,7 +130,7 @@ export function ActiveSignalsWidget() {
                   }}>
                     {signal.status.toUpperCase()}
                   </div>
-                  <div style={{ fontSize: '11px', color: '#64748b' }}>{signal.timestamp}</div>
+                  <div style={{ fontSize: '11px', color: '#64748b' }}>{timeAgo(signal.timestamp)}</div>
                 </div>
               </div>
 
@@ -183,7 +160,7 @@ export function ActiveSignalsWidget() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                   <div style={{ textAlign: 'left' }}>
                     <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '2px' }}>Entry</div>
-                    <div style={{ fontSize: '15px', fontWeight: '600', color: '#fff' }}>{formatPrice(signal.entryPrice, signal.pair)}</div>
+                    <div style={{ fontSize: '15px', fontWeight: '600', color: '#fff' }}>{formatPrice(signal.entry_price, signal.symbol)}</div>
                   </div>
                   
                   {/* Direction Arrow */}
@@ -197,7 +174,7 @@ export function ActiveSignalsWidget() {
                   <div style={{ textAlign: 'right' }}>
                     <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '2px' }}>Current</div>
                     <div style={{ fontSize: '15px', fontWeight: '600', color: isProfit ? '#10b981' : '#ef4444' }}>
-                      {formatPrice(signal.currentPrice, signal.pair)}
+                      {formatPrice(currentPrice, signal.symbol)}
                     </div>
                     <div style={{ fontSize: '10px', color: isProfit ? '#10b981' : '#ef4444' }}>
                       {isProfit ? '+' : ''}{pnlPercent.toFixed(2)}%
@@ -209,17 +186,17 @@ export function ActiveSignalsWidget() {
                 <div style={{ marginBottom: '20px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#ef4444' }}>
-                      <Shield size={12} /> SL: {formatPrice(signal.stopLoss, signal.pair)}
+                      <Shield size={12} /> SL: {formatPrice(signal.stop_loss, signal.symbol)}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#10b981' }}>
-                      <Target size={12} /> Final TP: {formatPrice(signal.targets[signal.targets.length - 1], signal.pair)}
+                      <Target size={12} /> Final TP: {formatPrice(signal.targets[signal.targets.length - 1], signal.symbol)}
                     </div>
                   </div>
                   
                   {/* Multi-Target Progress */}
                   <div style={{ display: 'flex', gap: '4px', height: '6px', marginTop: '8px' }}>
                     {signal.targets.map((tp, idx) => {
-                      const isHit = signal.direction === 'buy' ? signal.currentPrice >= tp : signal.currentPrice <= tp
+                      const isHit = signal.direction === 'buy' ? currentPrice >= tp : currentPrice <= tp
                       return (
                         <div 
                           key={idx} 
@@ -245,7 +222,7 @@ export function ActiveSignalsWidget() {
                 <div>
                   <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>Institutional Confluence:</div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                    {signal.confidence.map((factor, idx) => (
+                    {signal.confidence && signal.confidence.map((factor, idx) => (
                       <span key={idx} style={{ 
                         fontSize: '10px', 
                         padding: '3px 8px', 

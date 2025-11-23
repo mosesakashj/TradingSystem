@@ -17,6 +17,7 @@ class Room(str, Enum):
     LOGS = "logs"
     SYSTEM_HEALTH = "system_health"
     RISK_METRICS = "risk_metrics"
+    PRICES = "prices"
 
 
 class ConnectionManager:
@@ -30,6 +31,7 @@ class ConnectionManager:
             Room.LOGS: set(),
             Room.SYSTEM_HEALTH: set(),
             Room.RISK_METRICS: set(),
+            Room.PRICES: set(),
         }
         
         # Redis for pub/sub

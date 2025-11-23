@@ -4,5 +4,5 @@ from .models import (
     Signal, SignalStatus, SignalDirection,
     Prediction, Trade, TradeStatus, TradeDirection,
     Position, RiskMetrics, ModelVersion, AuditLog, SystemHealth,
-    UserSettings
+    UserSettings, User, UserRole
 )

@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react'
 import ReactDOM from 'react-dom/client'
 import { LineChart, Line, AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts'
-import { TrendingUp, TrendingDown, DollarSign, Activity, AlertCircle, CheckCircle, XCircle, Settings, Clock, Wifi, WifiOff } from 'lucide-react'
+import { TrendingUp, TrendingDown, DollarSign, Activity, AlertCircle, CheckCircle, XCircle, Settings, Clock, Wifi, WifiOff, LogOut } from 'lucide-react'
 import axios from 'axios'
 import { TradingSessionsChart } from './components/TradingSessionsChart'
 import { ActiveSignalsWidget } from './components/ActiveSignalsWidget'
 import { PriceCard } from './components/PriceCard'
+import { useWebSocket } from './hooks/useWebSocket'
+import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { Login } from './pages/Login'
 
 const API_URL = 'http://localhost:8000'
 
@@ -24,7 +27,8 @@ const TIMEZONES = [
   { value: 'Australia/Sydney', label: 'Sydney (AEST/AEDT)' }
 ]
 
-function Dashboard() {
+function DashboardContent() {
+  const { user, logout } = useAuth()
   const [stats, setStats] = useState(null)
   const [trades, setTrades] = useState([])
   const [signals, setSignals] = useState([])
@@ -122,29 +126,62 @@ function Dashboard() {
     timestamp: new Date(Date.now() - i * 1800000).toISOString()
   }))
 
-  // Fetch live prices from backend API
+
+  // Fetch live prices from backend API (Initial Load)
   const [livePrices, setLivePrices] = useState([])
+  
+  // WebSocket Connections
+  const { lastMessage: priceMessage, status: priceStatus } = useWebSocket('prices')
+  const { lastMessage: signalMessage, status: signalStatus } = useWebSocket('signals')
 
+  // Handle Real-time Price Updates
   useEffect(() => {
-    loadLivePrices()
-    const priceInterval = setInterval(loadLivePrices, 5000) // Update every 5s
-    return () => clearInterval(priceInterval)
-  }, [])
-
-  const loadLivePrices = async () => {
-    try {
-      const res = await axios.get(`${API_URL}/api/prices/live`)
-      if (res.data.success && res.data.prices) {
-        setLivePrices(res.data.prices)
-      } else {
-        // If API returns error, keep current prices or show empty
-        console.warn('API returned no prices:', res.data)
-      }
-    } catch (error) {
-      console.error('Failed to load live prices:', error)
-      // Keep showing last known prices, don't clear them
+    if (priceMessage && priceMessage.type === 'prices') {
+      setLivePrices(priceMessage.data)
     }
-  }
+  }, [priceMessage])
+
+  // Handle Real-time Signal Updates
+  useEffect(() => {
+    if (signalMessage && signalMessage.type === 'signal') {
+      const newSignal = signalMessage.data
+      setSignals(prev => {
+        // Avoid duplicates
+        if (prev.find(s => s.id === newSignal.id)) return prev
+        return [newSignal, ...prev]
+      })
+      
+      // Update stats
+      setStats(prev => ({
+        ...prev,
+        total_signals: prev.total_signals + 1
+      }))
+    }
+  }, [signalMessage])
+
+  // Initial Data Load
+  useEffect(() => {
+    const loadInitialData = async () => {
+      try {
+        const [pricesRes, signalsRes, statsRes] = await Promise.all([
+          axios.get(`${API_URL}/api/prices/live`),
+          axios.get(`${API_URL}/signals`),
+          axios.get(`${API_URL}/stats`)
+        ])
+        
+        if (pricesRes.data.success) setLivePrices(pricesRes.data.prices)
+        if (signalsRes.data.signals) setSignals(signalsRes.data.signals)
+        setStats(statsRes.data)
+        
+      } catch (error) {
+        console.error('Failed to load initial data:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    loadInitialData()
+  }, [])
 
   // Check if market is open
   const isMarketOpen = () => {
@@ -256,27 +293,71 @@ function Dashboard() {
             </span>
           </div>
 
+
           {/* Clock */}
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: '14px', fontWeight: '600', color: '#fff' }}>{formatTime()}</div>
             <div style={{ fontSize: '11px', color: '#64748b' }}>{formatDate()} • {settings?.timezone || 'UTC'}</div>
           </div>
 
-          {/* Settings */}
-          <button
-            onClick={() => setShowSettings(true)}
-            style={{
-              padding: '8px',
-              backgroundColor: '#334155',
-              border: 'none',
-              borderRadius: '8px',
-              color: '#cbd5e1',
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-          >
-            <Settings size={20} />
-          </button>
+          {/* User Info & Settings */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingLeft: '12px', borderLeft: '1px solid #334155' }}>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '13px', fontWeight: '600', color: '#fff' }}>{user?.username || 'Trader'}</div>
+              <div style={{ fontSize: '11px', color: '#64748b' }}>{user?.role || 'trader'}</div>
+            </div>
+            
+            <button
+              onClick={() => setShowSettings(true)}
+              style={{
+                background: 'none',
+                border: '1px solid #334155',
+                borderRadius: '8px',
+                padding: '8px',
+                cursor: 'pointer',
+                color: '#94a3b8',
+                display: 'flex',
+                alignItems: 'center',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = '#3b82f6'
+                e.currentTarget.style.color = '#3b82f6'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = '#334155'
+                e.currentTarget.style.color = '#94a3b8'
+              }}
+            >
+              <Settings size={16} />
+            </button>
+            
+            <button
+              onClick={logout}
+              style={{
+                background: 'none',
+                border: '1px solid #334155',
+                borderRadius: '8px',
+                padding: '8px',
+                cursor: 'pointer',
+                color: '#94a3b8',
+                display: 'flex',
+                alignItems: 'center',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = '#ef4444'
+                e.currentTarget.style.color = '#ef4444'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = '#334155'
+                e.currentTarget.style.color = '#94a3b8'
+              }}
+              title="Logout"
+            >
+              <LogOut size={16} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -300,15 +381,11 @@ function Dashboard() {
           alignItems: 'start'
         }}>
           
-          {/* LEFT COLUMN (Main) */}
+          {/* Left Column - Action Zone */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            <ActiveSignalsWidget signals={signals} livePrices={livePrices} />
             
-            {/* Active Signals (Hero Section) */}
-            <ActiveSignalsWidget />
-
-            {/* Charts Section */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '24px' }}>
-              <ChartCard title="📈 Account Performance">
+            <ChartCard title="Account Performance">
                 <div style={{ height: '350px', width: '100%' }}>
                   <ResponsiveContainer>
                     <AreaChart data={equityCurve}>
@@ -330,7 +407,7 @@ function Dashboard() {
                   </ResponsiveContainer>
                 </div>
               </ChartCard>
-            </div>
+
 
             {/* Recent Trades */}
             <TableCard title="💼 Trade History">
@@ -402,9 +479,10 @@ function Dashboard() {
             <div style={{ padding: '20px', backgroundColor: '#1e293b', borderRadius: '12px', border: '1px solid #334155' }}>
               <h3 style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '12px', fontWeight: '600' }}>SYSTEM HEALTH</h3>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <span style={{ fontSize: '13px', color: '#cbd5e1' }}>API Connection</span>
-                <span style={{ fontSize: '12px', color: apiOnline ? '#10b981' : '#ef4444', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  {apiOnline ? <Wifi size={14} /> : <WifiOff size={14} />} {apiOnline ? 'Stable' : 'Disconnected'}
+                <span style={{ fontSize: '13px', color: '#cbd5e1' }}>Real-time Feed</span>
+                <span style={{ fontSize: '12px', color: priceStatus === 'connected' ? '#10b981' : '#f59e0b', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  {priceStatus === 'connected' ? <Wifi size={14} /> : <WifiOff size={14} />} 
+                  {priceStatus === 'connected' ? 'Live' : priceStatus}
                 </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -778,9 +856,46 @@ function TableCard({ title, children }) {
   )
 }
 
+function App() {
+  const { user, loading } = useAuth()
+  const [showLogin, setShowLogin] = useState(false)
+
+  useEffect(() => {
+    if (!loading && !user) {
+      setShowLogin(true)
+    } else {
+      setShowLogin(false)
+    }
+  }, [user, loading])
+
+  if (loading) {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        minHeight: '100vh',
+        background: '#0f172a',
+        color: '#94a3b8',
+        fontSize: '16px'
+      }}>
+        Loading...
+      </div>
+    )
+  }
+
+  if (showLogin) {
+    return <Login onSuccess={() => setShowLogin(false)} />
+  }
+
+  return <DashboardContent />
+}
+
 // Render
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <Dashboard />
+    <AuthProvider>
+      <App />
+    </AuthProvider>
   </React.StrictMode>
 )

@@ -48,6 +48,42 @@ class OrderType(str, enum.Enum):
     STOP_LIMIT = "stop_limit"
 
 
+class UserRole(str, enum.Enum):
+    """User roles for access control"""
+    ADMIN = "admin"
+    TRADER = "trader"
+    VIEWER = "viewer"
+
+
+class User(Base):
+    """User model for authentication"""
+    __tablename__ = "users"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(50), unique=True, nullable=False, index=True)
+    email = Column(String(100), unique=True, nullable=False, index=True)
+    hashed_password = Column(String(255), nullable=False)
+    full_name = Column(String(100))
+    
+    # Role and status
+    role = Column(Enum(UserRole), default=UserRole.TRADER, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    is_verified = Column(Boolean, default=False, nullable=False)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_login = Column(DateTime)
+    
+    # Relationships
+    settings = relationship("UserSettings", back_populates="user", uselist=False)
+    
+    __table_args__ = (
+        Index('idx_user_username', 'username'),
+        Index('idx_user_email', 'email'),
+    )
+
+
 class Signal(Base):
     """Raw signals from TradingView webhooks"""
     __tablename__ = 'signals'
@@ -73,6 +109,12 @@ class Signal(Base):
     # Processing status
     status = Column(Enum(SignalStatus), default=SignalStatus.RECEIVED, nullable=False, index=True)
     rejection_reason = Column(Text)
+
+    # Institutional Data (New)
+    targets = Column(JSON)  # [TP1, TP2, TP3]
+    confidence = Column(JSON)  # ["Reason 1", "Reason 2"]
+    volatility = Column(String(20))  # Low, Medium, High
+    win_probability = Column(Float)  # 0-100
     
     # Relationships
     prediction = relationship("Prediction", back_populates="signal", uselist=False)
@@ -365,7 +407,7 @@ class UserSettings(Base):
     __tablename__ = 'user_settings'
     
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(String(100), unique=True, nullable=False, index=True)  # JWT sub or username
+    user_id = Column(Integer, ForeignKey('users.id'), unique=True, nullable=False, index=True)
     
     # Timezone preferences
     timezone = Column(String(50), default='UTC', nullable=False)
@@ -384,6 +426,9 @@ class UserSettings(Base):
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationship
+    user = relationship("User", back_populates="settings")
     
     __table_args__ = (
         Index('idx_user_settings_user', 'user_id'),
